@@ -1,0 +1,191 @@
+# pyx语法的几个约束：
+# <del>1. 组件元素（pyx_element_name以大写字母开头的pyx_element）不支持子元素，组件元素只能是pyx_self_closing_element </del>
+# <del>2. 组件元素不支持客户端嵌入（client_embed），组件元素属性值不能是client_embed </del>
+# 3. 除了web_component_script，不允许其他类型的<script>元素。
+script = script_item*
+
+inner_script = inner_script_item*
+
+script_item = comment / triple_single_quote / triple_double_quote / single_quote / double_quote / pyx_root_element / less_than_char / normal_code
+
+inner_script_item = comment / brace / triple_single_quote / triple_double_quote / single_quote / double_quote / pyx_element / less_than_char / inner_normal_code
+
+comment = ~r"#[^\r\n]*"
+
+brace = '{' inner_script '}'
+
+embed = '{' inner_script '}'
+
+triple_single_quote = ~r"'''(\\.|[^'\\]|'(?!''))*'''"
+
+triple_double_quote = ~r'"""(\\.|[^"\\]|"(?!""))*"""'
+
+single_quote = ~r"'(\\.|[^'\\])*'"
+
+double_quote = ~r'"(\\.|[^"\\])*"'
+
+simple_quote = single_quote / double_quote
+
+less_than_char = '<'
+
+normal_code = ~"[^#'\"<]+"
+
+inner_normal_code = ~"[^#'\"<{}]+"
+
+pyx_root_element = pyx_fragment / pyx_self_closing_element / pyx_paired_element
+
+pyx_element = pyx_fragment / pyx_self_closing_element / pyx_paired_element
+
+pyx_fragment = '<>' pyx_children '</>'
+
+pyx_self_closing_element = '<' pyx_element_name pyx_attributes maybe_space '/>'
+
+pyx_paired_element = pyx_start_tag pyx_children pyx_end_tag
+
+pyx_start_tag = '<' pyx_element_name pyx_attributes maybe_space '>'
+
+# https://html.spec.whatwg.org/#end-tags
+pyx_end_tag = '</' pyx_element_name maybe_space '>'
+
+pyx_element_name = ~r'[-0-9a-zA-Z_.]+'
+
+space = ~r'\s+'
+
+maybe_space = ~r'\s*'
+
+pyx_attributes = pyx_spaced_attribute*
+
+pyx_spaced_attribute = maybe_space pyx_attribute
+
+# 去掉对client_embed_attribute的支持，event_attribute是kv_attribute的一种
+#pyx_attribute = pyx_embed_spread_attribute / pyx_client_embed_attribute / pyx_event_attribute / pyx_kv_attribute / pyx_novalue_attribute
+pyx_attribute = pyx_embed_spread_attribute / pyx_kv_attribute / pyx_novalue_attribute
+
+pyx_embed_spread_attribute = '{' maybe_space ~'[*]{1,2}' maybe_space inner_script '}'  maybe_space maybe_css_literal
+
+#pyx_client_embed_attribute = client_embed_value maybe_space maybe_css_literal
+
+#pyx_event_attribute = '@' identifier maybe_space '=' maybe_space client_embed
+
+pyx_kv_attribute = pyx_attribute_name maybe_space '=' maybe_space pyx_attribute_value
+
+pyx_novalue_attribute = pyx_attribute_name !(maybe_space '=')
+
+# 属性名中可以有“/”，用以支持无值属性方式的CSS
+pyx_attribute_name = ~r"([^\s\"'>/=]|/(?!>))+"
+
+# https://html.spec.whatwg.org/#attributes-2  with extension of pyx, and do not support unquoted attribute value
+# simple_quote: 正常的单双引号属性值
+# pyx_attr_value_embed: python嵌入属性值，可选后跟js嵌入属性值，以及可能的css字符串
+# pyx_attr_value_client_embed: js嵌入属性值，以及可能的css字符串
+# client_embed: js嵌入属性值
+# pyx_element: html基础元素或组件元素
+pyx_attribute_value = simple_quote / pyx_attr_value_embed / pyx_attr_value_client_embed / client_embed / pyx_element 
+
+pyx_attr_value_embed = embed maybe_space maybe_client_embed maybe_space maybe_css_literal
+
+pyx_attr_value_client_embed = client_embed_value maybe_space maybe_css_literal
+
+pyx_css_literal = ':' maybe_space simple_quote
+
+maybe_css_literal = pyx_css_literal?
+
+# 暂不支持没有引号的属性值
+#pyx_unquoted_attribute_value = ~"[^\\s\"'=<>{}`]+"
+
+pyx_children = pyx_child*
+
+pyx_child = embed_value / client_embed_value / web_component_script / html_comment / pyx_element / pyx_text / no_embed_char
+
+embed_value = embed maybe_space maybe_client_embed
+
+client_embed_value = '[' ~r"(\\.|[^\]\\])*" ']' maybe_space client_embed
+
+# 多个空格缩减为1个，丢弃只有空格的字符串，单双引号是正常字符
+pyx_text = ~r"[^<>{}[\]]+"
+
+no_embed_char = ~r"[{}[\]]"
+
+web_component_script = '<script' pyx_attributes maybe_space '>' client_script "</script>"
+
+html_comment = '<!--' ~'-(?!->)|[^-]*' '-->'
+
+client_script = client_script_item*
+
+client_script_item = client_single_line_comment / client_multi_line_comment / simple_quote / template_simple / template_normal / client_parenthesis / client_brace / static_import / client_normal_code / no_comment_slash_char / no_script_less_than_char / no_import_i_char
+
+client_single_line_comment = ~r"//[^\r\n]*"
+
+client_multi_line_comment = '/*' ~"[*](?!/)|[^*]*" '*/'
+
+template_simple = ~r"`(\\.|[^`$\\])*`"
+
+template_normal = template_head client_script template_middle_scripts template_tail
+
+template_head = ~r"`(\\.|[^`$\\])*[$][{]"
+
+template_middle_scripts = template_middle_script*
+
+template_middle_script = template_middle client_script
+
+template_middle = ~r"[}](\\.|[^`$\\])*[$][{]"
+
+template_tail = ~r"[}](\\.|[^`$\\])*`"
+
+client_embed = jsop_client_embed / js_client_embed
+js_client_embed = '(' client_script ')'
+# JS Over Py client embed
+jsop_client_embed = '({' inner_script '})'
+
+maybe_client_embed = client_embed?
+
+client_parenthesis = '(' client_script ')'
+
+# 为了处理template string中内嵌的js代码，需要加上client_brace
+client_brace = '{' client_script '}'
+
+static_import = simple_static_import / normal_static_import
+
+simple_static_import = 'import' space simple_quote
+
+normal_static_import = 'import' space import_identifiers space 'from' space simple_quote
+
+import_identifiers = import_identifier other_import_identifiers
+
+other_import_identifiers = other_import_identifier*
+
+other_import_identifier = maybe_space ',' maybe_space import_identifier
+
+import_identifier = identifier / namespace_import_identifier / named_import_identifiers
+
+identifier = ~r"[a-zA-Z][a-zA-Z0-9_]*"
+
+namespace_import_identifier = '*' maybe_space 'as' space identifier
+
+named_import_identifiers = '{' maybe_space named_import_identifier other_named_import_identifiers maybe_space '}'
+
+other_named_import_identifiers = other_named_import_identifier*
+
+other_named_import_identifier = maybe_space ',' maybe_space named_import_identifier
+
+named_import_identifier = identifier_with_alias / identifier
+
+identifier_with_alias = identifier space 'as' space identifier
+
+# /: js中注释的开头字符
+# ': js中字符串开头字符
+# ": js中字符串开头字符
+# `: js中模板字符串开头字符
+# <: </script>开头字符
+# (: 嵌入js开头字符
+# ): 嵌入js结束字符
+# {: js模板字符串中嵌入js代码开始字符
+# }: js模板字符串中嵌入js代码结束字符
+# i: js中import语句开头字符
+client_normal_code = ~"[^/'\"`<(){}i]+"
+
+no_script_less_than_char = ~"<(?!/script>)"
+
+no_comment_slash_char = ~'/(?![/*])'
+
+no_import_i_char = 'i'
